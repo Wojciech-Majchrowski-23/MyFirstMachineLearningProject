@@ -16,7 +16,7 @@ namespace SentimentAnalysis
     class Program
     {
         // <SnippetDeclareGlobalVariables>
-        static readonly string _dataPath = Path.Combine(Environment.CurrentDirectory, "yelp_labelled.txt");
+        static readonly string _dataPath = Path.Combine(Environment.CurrentDirectory, "mindWaveDataJasiu_cleansedData.csv");
         // </SnippetDeclareGlobalVariables>
 
         static void Main(string[] args)
@@ -57,14 +57,19 @@ namespace SentimentAnalysis
             // is the easiest way to get started, but ML.NET also allows you
             // to load data from databases or in-memory collections.
             // <SnippetLoadData>
-            IDataView dataView = mlContext.Data.LoadFromTextFile<SentimentData>(_dataPath, hasHeader: false);
+            IDataView dataView = mlContext.Data.LoadFromTextFile<mindWaveJasiuData>(
+                path: _dataPath,
+                hasHeader: true,
+                separatorChar: ';',
+                trimWhitespace: true
+            );
             // </SnippetLoadData>
 
             // You need both a training dataset to train the model and a test dataset to evaluate the model.
             // Split the loaded dataset into train and test datasets
             // Specify test dataset percentage with the `testFraction`parameter
             // <SnippetSplitData>
-            TrainTestData splitDataView = mlContext.Data.TrainTestSplit(dataView, testFraction: 0.2);
+            TrainTestData splitDataView = mlContext.Data.TrainTestSplit(dataView, testFraction: 0.1);
             // </SnippetSplitData>
 
             // <SnippetReturnSplitData>
@@ -78,11 +83,21 @@ namespace SentimentAnalysis
             // This is used to format and clean the data.
             // Convert the text column to numeric vectors (Features column)
             // <SnippetFeaturizeText>
-            var estimator = mlContext.Transforms.Text.FeaturizeText(outputColumnName: "Features", inputColumnName: nameof(SentimentData.SentimentText))
+            var estimator = mlContext.Transforms.Concatenate("Features",
+                nameof(mindWaveJasiuData.Delta),
+                nameof(mindWaveJasiuData.Theta),
+                nameof(mindWaveJasiuData.LowAlpha),
+                nameof(mindWaveJasiuData.HighAlpha),
+                nameof(mindWaveJasiuData.LowBeta),
+                nameof(mindWaveJasiuData.HighBeta),
+                nameof(mindWaveJasiuData.LowGamma),
+                nameof(mindWaveJasiuData.HighGamma),
+                nameof(mindWaveJasiuData.Attention),
+                nameof(mindWaveJasiuData.Meditation))
             //</SnippetFeaturizeText>
             // append the machine learning task to the estimator
             // <SnippetAddTrainer>
-            .Append(mlContext.BinaryClassification.Trainers.SdcaLogisticRegression(labelColumnName: "Label", featureColumnName: "Features"));
+            .Append(mlContext.BinaryClassification.Trainers.FastTree(labelColumnName: "Label", featureColumnName: "Features"));
             // </SnippetAddTrainer>
 
             // Create and train the model based on the dataset that has been loaded, transformed.
@@ -139,74 +154,80 @@ namespace SentimentAnalysis
 
         private static void UseModelWithSingleItem(MLContext mlContext, ITransformer model)
         {
-            // <SnippetCreatePredictionEngine1>
-            PredictionEngine<SentimentData, SentimentPrediction> predictionFunction = mlContext.Model.CreatePredictionEngine<SentimentData, SentimentPrediction>(model);
-            // </SnippetCreatePredictionEngine1>
+            var predictionFunction = mlContext.Model.CreatePredictionEngine<mindWaveJasiuData, SentimentPrediction>(model);
 
-            // <SnippetCreateTestIssue1>
-            SentimentData sampleStatement = new SentimentData
+            // Przykładowe dane EEG (wstaw tu rzeczywiste lub sensowne liczby)
+            var sampleData = new mindWaveJasiuData
             {
-                SentimentText = "This was a very bad steak"
+                Delta = 30000,
+                Theta = 20000,
+                LowAlpha = 15000,
+                HighAlpha = 14000,
+                LowBeta = 10000,
+                HighBeta = 9000,
+                LowGamma = 8000,
+                HighGamma = 7000,
+                Attention = 60,
+                Meditation = 50
             };
-            // </SnippetCreateTestIssue1>
 
-            // <SnippetPredict>
-            var resultPrediction = predictionFunction.Predict(sampleStatement);
-            // </SnippetPredict>
-            // <SnippetOutputPrediction>
-            Console.WriteLine();
-            Console.WriteLine("=============== Prediction Test of model with a single sample and test dataset ===============");
+            var resultPrediction = predictionFunction.Predict(sampleData);
 
             Console.WriteLine();
-            Console.WriteLine($"Sentiment: {resultPrediction.SentimentText} | Prediction: {(Convert.ToBoolean(resultPrediction.Prediction) ? "Positive" : "Negative")} | Probability: {resultPrediction.Probability} ");
-
-            Console.WriteLine("=============== End of Predictions ===============");
-            Console.WriteLine();
-            // </SnippetOutputPrediction>
+            Console.WriteLine("=============== Pojedyncza predykcja ===============");
+            Console.WriteLine($"Prediction: {(resultPrediction.Prediction ? "Doing Task" : "Not Doing Task")}");
+            Console.WriteLine($"Probability: {resultPrediction.Probability:P2}");
+            Console.WriteLine($"Score: {resultPrediction.Score}");
+            Console.WriteLine("====================================================");
         }
+
 
         public static void UseModelWithBatchItems(MLContext mlContext, ITransformer model)
         {
-            // Adds some comments to test the trained model's data points.
-            // <SnippetCreateTestIssues>
-            IEnumerable<SentimentData> sentiments = new[]
-            {
-                new SentimentData
-                {
-                    SentimentText = "This was a horrible meal"
-                },
-                new SentimentData
-                {
-                    SentimentText = "I love this spaghetti."
-                }
-            };
-            // </SnippetCreateTestIssues>
-
-            // Load batch comments just created
-            // <SnippetPrediction>
-            IDataView batchComments = mlContext.Data.LoadFromEnumerable(sentiments);
-
-            IDataView predictions = model.Transform(batchComments);
-
-            // Use model to predict whether comment data is Positive (1) or Negative (0).
-            IEnumerable<SentimentPrediction> predictedResults = mlContext.Data.CreateEnumerable<SentimentPrediction>(predictions, reuseRowObject: false);
-            // </SnippetPrediction>
-
-            // <SnippetAddInfoMessage>
-            Console.WriteLine();
-
-            Console.WriteLine("=============== Prediction Test of loaded model with multiple samples ===============");
-            // </SnippetAddInfoMessage>
-
-            Console.WriteLine();
-
-            // <SnippetDisplayResults>
-            foreach (SentimentPrediction prediction in predictedResults)
-            {
-                Console.WriteLine($"Sentiment: {prediction.SentimentText} | Prediction: {(Convert.ToBoolean(prediction.Prediction) ? "Positive" : "Negative")} | Probability: {prediction.Probability} ");
-            }
-            Console.WriteLine("=============== End of predictions ===============");
-            // </SnippetDisplayResults>
+            // Przykładowa lista dwóch zestawów danych EEG
+            var eegSamples = new List<mindWaveJasiuData>
+    {
+        new mindWaveJasiuData
+        {
+            Delta = 31000,
+            Theta = 21000,
+            LowAlpha = 16000,
+            HighAlpha = 15000,
+            LowBeta = 11000,
+            HighBeta = 9500,
+            LowGamma = 8500,
+            HighGamma = 7500,
+            Attention = 65,
+            Meditation = 55
+        },
+        new mindWaveJasiuData
+        {
+            Delta = 25000,
+            Theta = 19000,
+            LowAlpha = 12000,
+            HighAlpha = 13000,
+            LowBeta = 9000,
+            HighBeta = 8700,
+            LowGamma = 8200,
+            HighGamma = 7600,
+            Attention = 45,
+            Meditation = 40
         }
+    };
+
+            var batchData = mlContext.Data.LoadFromEnumerable(eegSamples);
+            var predictions = model.Transform(batchData);
+            var results = mlContext.Data.CreateEnumerable<SentimentPrediction>(predictions, reuseRowObject: false);
+
+            Console.WriteLine();
+            Console.WriteLine("=============== Predykcje batchowe ===============");
+            int i = 1;
+            foreach (var prediction in results)
+            {
+                Console.WriteLine($"Sample {i++} | Prediction: {(prediction.Prediction ? "Doing Task" : "Not Doing Task")} | Probability: {prediction.Probability:P2}");
+            }
+            Console.WriteLine("===================================================");
+        }
+
     }
 }
